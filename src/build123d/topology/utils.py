@@ -83,6 +83,10 @@ from OCP.TopoDS import (
     TopoDS_Wire,
 )
 from build123d.geometry import TOLERANCE, BoundBox, Vector, VectorLike
+import build123d.topology.naming.naming_methods as NamingMethods
+import build123d.topology.naming.naming_data as NamingData
+from build123d.topology.naming.indexed_name import IndexedName
+from build123d.topology.naming.mapped_name import MappedName
 
 from .shape_core import Shape, ShapeList, downcast, shapetype, unwrap_topods_compound
 
@@ -92,6 +96,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .one_d import Edge, Wire  # pylint: disable=R0801
 
 
+# TODO: faze out in favor of _makeNamedExtrusion for naming support
 def _extrude_topods_shape(obj: TopoDS_Shape, direction: VectorLike) -> TopoDS_Shape:
     """extrude
 
@@ -132,6 +137,71 @@ def _extrude_topods_shape(obj: TopoDS_Shape, direction: VectorLike) -> TopoDS_Sh
         extrusion = _make_topods_compound_from_shapes(solids)
     return extrusion
 
+def _makeNamedExtrusion(obj: Shape, direction: VectorLike, newTag: int):
+    """extrude
+
+    Extrude a Mapped Shape in the provided direction.
+    * Vertices generate Edges
+    * Edges generate Faces
+    * Wires generate Shells
+    * Faces generate Solids
+    * Shells generate Compounds
+
+    Args:
+        direction (VectorLike): direction and magnitude of extrusion
+        newTag (int): the new tag to use for the return shape
+
+    Raises:
+        ValueError: Unsupported class
+        RuntimeError: Generated invalid result
+
+    Returns:
+        Shape: extruded shape with tracked history
+    """
+    returnShape = Shape(tag = newTag)
+    direction = Vector(direction)
+
+    if obj is None or not isinstance(
+        obj,
+        (Shape),
+    ):
+        raise ValueError(f"extrude not supported for {type(obj)}")
+
+    prism_builder = BRepPrimAPI_MakePrism(obj, direction.wrapped)
+    returnShape._wrapped = downcast(prism_builder.Shape())
+
+    generatedShapes = NamingData.ShapeHistoryList(0)
+    modifiedShapes = NamingData.ShapeHistoryList(1)
+
+    for indexedNameStr, subElement in returnShape.edges():
+        indexedName = IndexedName.fromString(indexedNameStr)
+        indexedName.parentIdentifier = returnShape.tag
+
+        generatedShapes.extendList(indexedName,
+                                   maker.Generated(subElement),
+                                   extrusionTShape)
+
+    for indexedNameStr, subElement in supportTShape.getShapeMap().items():
+        indexedName = IndexedName.fromString(indexedNameStr)
+        indexedName.parentIdentifier = supportTShape.tag
+
+        modifiedShapes.extendList(indexedName,
+                                  maker.Modified(subElement),
+                                  extrusionTShape)
+
+    modifiedShapes.updateReverseList()
+    generatedShapes.updateReverseList()
+
+    NamingMethods.mapShapeHistory(returnShape)
+    # shape_type = returnShape._wrapped.ShapeType()
+    # if shape_type == TopAbs_ShapeEnum.TopAbs_COMPSOLID:
+    #     solids = []
+    #     explorer = TopExp_Explorer(returnShape._wrapped, TopAbs_ShapeEnum.TopAbs_SOLID)
+    #     while explorer.More():
+    #         solids.append(downcast(explorer.Current()))
+    #         explorer.Next()
+    #     returnShape._wrapped = _make_topods_compound_from_shapes(solids)
+    return returnShape
 
 def _make_loft(
     objs: Iterable[Vertex | Wire],

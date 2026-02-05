@@ -150,6 +150,7 @@ from build123d.geometry import (
     VectorLike,
     logger,
 )
+from build123d.topology.naming.element_map import ElementMap
 
 if TYPE_CHECKING:  # pragma: no cover
     from build123d.build_part import BuildPart  # pylint: disable=R0801
@@ -288,6 +289,8 @@ class Shape(NodeMixin, Generic[TOPODS]):
         label: str = "",
         color: ColorLike | None = None,
         parent: Compound | None = None,
+        tag: str = "",
+        element_map: ElementMap = ElementMap()
     ):
         self._wrapped: TOPODS | None = (
             tcast(Optional[TOPODS], downcast(obj)) if obj is not None else None
@@ -295,6 +298,10 @@ class Shape(NodeMixin, Generic[TOPODS]):
         self.for_construction = False
         self.label = label
         self.color = color
+
+        # here are two properties essential for topological naming
+        self.tag = tag
+        self.element_map = element_map
 
         # parent must be set following children as post install accesses children
         self.parent = parent
