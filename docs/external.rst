@@ -38,7 +38,7 @@ A web-based CAD viewer for OCP models (CadQuery/build123d) that runs in any mode
 static site deployment. Features include interactive inspection of faces, edges, and vertices, 
 measurement tools, per-model clipping planes, transparency control, and hot reloading via ``yacv-server``. 
 It also has a build123d playground for editing and sharing models directly in the browser 
-(`demo <https://yeicor-3d.github.io/yet-another-cad-viewer/#pg_code_url=https://raw.githubusercontent.com/gumyr/build123d/refs/heads/dev/examples/toy_truck.py>`_).
+(`demo <https://yeicor-3d.github.io/yet-another-cad-viewer/#pg_code=https://raw.githubusercontent.com/gumyr/build123d/refs/heads/dev/examples/toy_truck.py&pg_version=dev>`_).
 
 See: `Yet Another CAD Viewer <https://github.com/yeicor-3d/yet-another-cad-viewer>`_
 
@@ -109,11 +109,11 @@ as well as large assemblies created using those parts. See
 `the OpenVMP robot <https://partcad.org/repository/package/robotics/multimodal/openvmp/robots/don1>`_
 as an example of an assembly
 
-gggears generator
-=================
+py_gearworks generator
+======================
 A gear generation framework that allows easy creation of a wide range of gears and drives.
 
-See `gggears <https://github.com/GarryBGoode/gggears>`_
+See `py_gearworks <https://github.com/GarryBGoode/py_gearworks>`_
 
 bd_vslot
 =================
@@ -161,6 +161,35 @@ from PartCAD repositories, and to
 `publish build123d designs <https://partcad.readthedocs.io/en/latest/use_cases.html#publish-packages>`_
 to be consumed by others.
 
+MakerRepo library (mr)
+======================
+
+The ``makerrepo`` Python package (imported as ``mr``) is a lightweight library that
+provides decorators such as ``@artifact``, ``@customizable``, and ``@cached`` to
+annotate functions that build your models. The decorators have no effect on your
+existing build123d code until it is discovered and run by tools such as the
+`makerrepo-cli <https://docs.makerrepo.com/makerrepo-cli/>`_ or
+`MakerRepo.com <https://makerrepo.com/>`_ CI. The goal is to enable a code-driven
+workflow locally (e.g. command-line tools) or in CI. The library does not assume
+how it will be consumed, so annotated functions can be used with other tools and
+frameworks as well.
+
+See `MakerRepo Library Docs <https://docs.makerrepo.com/makerrepo-library/>`_ for
+more information and `LaunchPlatform/makerrepo <https://github.com/LaunchPlatform/makerrepo>`_
+for source code.
+
+makerrepo-cli
+=============
+
+Command-line tool (available as ``makerrepo-cli`` or ``mr``) to build artifacts,
+run generators, snapshot artifacts, and manage cache locally. It scans the
+current directory for Python packages and modules that use the MakerRepo library
+decorators.
+
+See `MakerRepo CLI <https://docs.makerrepo.com/makerrepo-cli/>`_ for
+documentation and `LaunchPlatform/makerrepo-cli <https://github.com/LaunchPlatform/makerrepo-cli>`_
+for source code.
+
 dl4to4ocp
 =========
 
@@ -178,3 +207,17 @@ This project ports the low-level dependencies required for build123d to run in a
 For a fully featured frontend, check out ``Yet Another CAD Viewer`` (see above).
 
 See: `OCP.wasm <https://github.com/yeicor/OCP.wasm>`_
+
+partomatic
+==========
+
+Partomatic provides a standardized system for building parametric models in build123d.
+The open nature of build123d is its strength, but it makes it difficult to build
+standardized tooling to interface with your projects. It makes it easy to:
+
+  * import and export configuration files
+  * easily export models for projects that provide large numbers of intersectional options
+  * share the built-in web interface allowing end-users to change properties and see the results quickly
+  * generate logs for compilation and web interface events that can be consumed by an OpenTelemetry platform
+
+See: `Partomatic <https://github.com/x0pherl/partomatic>`_

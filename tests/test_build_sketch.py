@@ -196,9 +196,20 @@ class TestBuildSketchObjects(unittest.TestCase):
         with BuildSketch() as test:
             c = Circle(20)
         self.assertEqual(c.radius, 20)
+        self.assertEqual(c.arc_size, 360)
         self.assertEqual(c.align, (Align.CENTER, Align.CENTER))
         self.assertEqual(c.mode, Mode.ADD)
         self.assertAlmostEqual(test.sketch.area, pi * 20**2, 5)
+        self.assertEqual(c.faces()[0].normal_at(), Vector(0, 0, 1))
+
+    def test_circle_sector(self):
+        with BuildSketch() as test:
+            c = Circle(20, arc_size=180)
+        self.assertEqual(c.radius, 20)
+        self.assertEqual(c.arc_size, 180)
+        self.assertEqual(c.align, (Align.CENTER, Align.CENTER))
+        self.assertEqual(c.mode, Mode.ADD)
+        self.assertAlmostEqual(test.sketch.area, (pi * 20**2) / 2, 5)
         self.assertEqual(c.faces()[0].normal_at(), Vector(0, 0, 1))
 
     def test_ellipse(self):
@@ -383,6 +394,22 @@ class TestBuildSketchObjects(unittest.TestCase):
         self.assertEqual(len(test.sketch.faces()), 4)
         self.assertEqual(t.faces()[0].normal_at(), Vector(0, 0, 1))
 
+    def test_text_singleline(self):
+        font_size = 10
+        singleline = Text("test", font_size, "singleline")
+        self.assertTrue(all([isinstance(s, Face) for s in singleline.get_top_level_shapes()]))
+        self.assertEqual(singleline.single_line_width, font_size * .04)
+
+        singlelinewidth = Text("test", font_size, "singleline", single_line_width=1)
+        self.assertEqual(singlelinewidth.single_line_width, 1)
+
+        with self.assertRaises(ValueError):
+            Text("test", font_size, "singleline", single_line_width=0)
+
+        with self.assertRaises(ValueError):
+            Text("the quick brown fox", font_size, "singleline", single_line_width=6)
+
+    def test_text_exceptions(self):
         with self.assertRaises(ValueError):
             Text("test", 2, text_align=(TextAlign.BOTTOM, TextAlign.BOTTOM))
 
@@ -467,6 +494,20 @@ class TestBuildSketchObjects(unittest.TestCase):
                 make_face()
         with self.assertRaises(ValueError):
             make_face()
+
+    def test_make_face_accepts_curve(self):
+        length, width = 80.0, 60.0
+        lines = Curve() + [
+            Line((0, 0), (length, 0)),
+            Line((length, 0), (length, width)),
+            ThreePointArc((length, width), (width, width * 1.5), (0.0, width)),
+            Line((0.0, width), (0.0, 0.0)),
+        ]
+
+        sketch = make_face(lines)
+
+        self.assertTrue(isinstance(sketch, Sketch))
+        self.assertEqual(len(sketch.faces()), 1)
 
     def test_make_hull(self):
         """Test hull from pending edges and passed edges"""

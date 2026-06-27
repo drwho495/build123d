@@ -29,10 +29,12 @@ license:
 
 import copy as copy_module
 import logging
-from math import radians, tan
-from typing import cast, TypeAlias
-
 from collections.abc import Iterable
+from math import radians, tan
+from typing import TypeAlias, cast
+
+from OCP.Standard import Standard_ConstructionError, Standard_Failure
+from OCP.StdFail import StdFail_NotDone
 
 from build123d.build_common import (
     Builder,
@@ -41,23 +43,14 @@ from build123d.build_common import (
     flatten_sequence,
     validate_inputs,
 )
-from build123d.build_enums import Keep, Kind, Mode, Side, Transition, GeomType
+from build123d.build_enums import GeomType, Keep, Kind, Mode, Side, Transition
 from build123d.build_line import BuildLine
 from build123d.build_part import BuildPart
 from build123d.build_sketch import BuildSketch
-from build123d.geometry import (
-    Axis,
-    Location,
-    Matrix,
-    Plane,
-    Rotation,
-    RotationLike,
-    Vector,
-    VectorLike,
-)
+from build123d.geometry import Axis, Plane, Rotation, RotationLike, Vector, VectorLike
+from build123d.objects_curve import BaseLineObject
 from build123d.objects_part import BasePartObject
 from build123d.objects_sketch import BaseSketchObject
-from build123d.objects_curve import BaseLineObject
 from build123d.topology import (
     Compound,
     Curve,
@@ -325,7 +318,7 @@ def chamfer(
     if context is not None:
         target = context._obj
     else:
-        target = object_list[0].topo_parent
+        target = object_list[0].topo_parent  # pylint: disable=no-member
     if target is None:
         raise ValueError("Nothing to chamfer")
 
@@ -426,7 +419,7 @@ def fillet(
     if context is not None:
         target = context._obj
     else:
-        target = object_list[0].topo_parent
+        target = object_list[0].topo_parent  # pylint: disable=no-member
     if target is None:
         raise ValueError("Nothing to fillet")
 
@@ -642,12 +635,18 @@ def offset(
                     )
                 else:
                     inner_wires.append(offset_wire)
-            except Exception:
+            except (
+                RuntimeError,
+                Standard_Failure,
+                Standard_ConstructionError,
+                StdFail_NotDone,
+            ):
                 pass
+
         # inner wires may go beyond the outer wire so subtract faces
         new_face = Face(outer_wire)
         if (new_face.normal_at() - face.normal_at()).length > 0.001:
-            new_face = -new_face
+            new_face = -new_face  # pylint: disable=invalid-unary-operand-type
         if inner_wires:
             inner_faces = [Face(w) for w in inner_wires]
             subtraction = new_face.cut(*inner_faces)
@@ -857,6 +856,7 @@ def project(
 def scale(
     objects: Shape | Iterable[Shape] | None = None,
     by: float | tuple[float, float, float] = 1,
+    about: VectorLike | None = None,
     mode: Mode = Mode.REPLACE,
 ) -> Curve | Sketch | Part | Compound:
     """Generic Operation: scale
@@ -870,6 +870,8 @@ def scale(
     Args:
         objects (Edge |  Face |  Compound |  Solid or Iterable of): objects to scale
         by (float | tuple[float, float, float]): scale factor
+        about (VectorLike, optional): point to scale about. Defaults to each
+            object's location position.
         mode (Mode, optional): combination mode. Defaults to Mode.REPLACE.
 
     Raises:
@@ -886,39 +888,11 @@ def scale(
 
     validate_inputs(context, "scale", object_list)
 
-    if isinstance(by, (int, float)):
-        factor = float(by)
-    elif (
-        isinstance(by, (tuple))
-        and len(by) == 3
-        and all(isinstance(s, (int, float)) for s in by)
-    ):
-        by_vector = Vector(by)
-        scale_matrix = Matrix(
-            [
-                [by_vector.X, 0.0, 0.0, 0.0],
-                [0.0, by_vector.Y, 0.0, 0.0],
-                [0.0, 0.0, by_vector.Z, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
-        )
-    else:
-        raise ValueError("by must be a float or a three tuple of float")
-
     new_objects = []
     for obj in object_list:
         if obj is None:
             continue
-        current_location = obj.location
-        assert current_location is not None
-        obj_at_origin = obj.located(Location(Vector()))
-        if isinstance(by, (int, float)):
-            new_object = obj_at_origin.scale(factor).locate(current_location)
-        else:
-            new_object = obj_at_origin.transform_geometry(scale_matrix).locate(
-                current_location
-            )
-        new_objects.append(new_object)
+        new_objects.append(obj.scale(by, about=about))
 
     if context is not None:
         context._add_to_context(*new_objects, mode=mode)
@@ -1030,10 +1004,12 @@ def sweep(
     """
     context: Builder | None = Builder._get_context("sweep")
 
-    section_list = (
-        [*sections] if isinstance(sections, (list, tuple, filter)) else [sections]
-    )
-    section_list = [sec for sec in section_list if sec is not None]
+    if sections is None:
+        section_list = []
+    elif isinstance(sections, Iterable):
+        section_list = [sec for sec in sections if sec is not None]
+    else:
+        section_list = [sections]
 
     validate_inputs(context, "sweep", section_list)
 

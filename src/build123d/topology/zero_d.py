@@ -54,12 +54,11 @@ license:
 from __future__ import annotations
 
 import itertools
-import warnings
 
 from typing import overload, TYPE_CHECKING
 
 from collections.abc import Iterable
-from typing_extensions import Self
+from typing_extensions import Self, deprecated
 
 import OCP.TopAbs as ta
 from OCP.BRep import BRep_Tool
@@ -70,7 +69,6 @@ from OCP.gp import gp_Pnt
 from build123d.geometry import Matrix, Vector, VectorLike, Location, Axis, Plane
 from build123d.build_enums import Keep
 from .shape_core import Shape, ShapeList, TrimmingTool, downcast, shapetype
-
 
 if TYPE_CHECKING:  # pragma: no cover
     from .one_d import Edge, Wire  # pylint: disable=R0801
@@ -104,8 +102,6 @@ class Vertex(Shape[TopoDS_Vertex]):
         """Vertex from Vector or other iterators"""
 
     def __init__(self, *args, **kwargs):
-        self.vertex_index = 0
-
         ocp_vx = kwargs.pop("ocp_vx", None)
         v = kwargs.pop("v", None)
         x = kwargs.pop("X", 0)
@@ -168,44 +164,42 @@ class Vertex(Shape[TopoDS_Vertex]):
         """extrude - invalid operation for Vertex"""
         raise NotImplementedError("Vertices can't be created by extrusion")
 
-    def intersect(
-        self, *to_intersect: Shape | Vector | Location | Axis | Plane
-    ) -> ShapeList[Vertex] | None:
-        """Intersection of vertex and geometric objects or shapes.
+    def _intersect(
+        self,
+        other: Shape | Vector | Location | Axis | Plane,
+        tolerance: float = 1e-6,
+        include_touched: bool = False,
+    ) -> ShapeList | None:
+        """Single-object intersection for Vertex.
+
+        For a vertex (0D), intersection means the vertex lies on/in the other shape.
 
         Args:
-            to_intersect (sequence of [Shape | Vector | Location | Axis | Plane]):
-                Objects(s) to intersect with
-
-        Returns:
-            ShapeList[Vertex] | None: Vertex intersection in a ShapeList or None
+            other: Shape or geometry object to intersect with
+            tolerance: tolerance for intersection detection
+            include_touched: if True, include boundary contacts
+                (only relevant when Solids are involved)
         """
-        common = Vector(self)
-        result: Shape | ShapeList[Shape] | Vector | None
-        for obj in to_intersect:
-            # Treat as Vector, otherwise call intersection from Shape
-            match obj:
-                case Vertex():
-                    result = common.intersect(Vector(obj))
-                case Vector() | Location() | Axis() | Plane():
-                    result = obj.intersect(common)
-                case _ if issubclass(type(obj), Shape):
-                    result = obj.intersect(self)
-                case _:
-                    raise ValueError(f"Unsupported type to_intersect:: {type(obj)}")
+        # Convert geometry objects to Vertex
+        if isinstance(other, Vector):
+            other = Vertex(other)
+        elif isinstance(other, Location):
+            other = Vertex(other.position)
+        elif isinstance(other, Axis):
+            # Check if vertex lies on the axis
+            return ShapeList([self]) if other.intersect(self.center()) else None
+        elif isinstance(other, Plane):
+            # Check if vertex lies on the plane
+            return (
+                ShapeList([self]) if other.contains(self.center(), tolerance) else None
+            )
 
-            if isinstance(result, Vector) and result == common:
-                pass
-            elif (
-                isinstance(result, list)
-                and len(result) == 1
-                and Vector(result[0]) == common
-            ):
-                pass
-            else:
-                return None
+        if isinstance(other, Vertex):
+            # Vertex + Vertex: check distance
+            return ShapeList([self]) if self.distance_to(other) <= tolerance else None
 
-        return ShapeList([self])
+        # Delegate to higher-dimensional shape (including Compound)
+        return other._intersect(self, tolerance, include_touched)
 
     # ---- Instance Methods ----
 
@@ -250,23 +244,7 @@ class Vertex(Shape[TopoDS_Vertex]):
 
     def __iter__(self):
         """Initialize to beginning"""
-        self.vertex_index = 0
-        return self
-
-    def __next__(self):
-        """return the next value"""
-        if self.vertex_index == 0:
-            self.vertex_index += 1
-            value = self.X
-        elif self.vertex_index == 1:
-            self.vertex_index += 1
-            value = self.Y
-        elif self.vertex_index == 2:
-            self.vertex_index += 1
-            value = self.Z
-        else:
-            raise StopIteration
-        return value
+        return iter((self.X, self.Y, self.Z))
 
     def __repr__(self) -> str:
         """To String
@@ -316,14 +294,9 @@ class Vertex(Shape[TopoDS_Vertex]):
         """split - not implemented"""
         raise NotImplementedError("Vertices cannot be split.")
 
+    @deprecated("Use 'tuple(Vertex)' instead.")
     def to_tuple(self) -> tuple[float, float, float]:
         """Return vertex as three tuple of floats"""
-        warnings.warn(
-            "to_tuple is deprecated and will be removed in a future version. "
-            "Use 'tuple(Vertex)' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         geom_point = BRep_Tool.Pnt_s(self.wrapped)
         return (geom_point.X(), geom_point.Y(), geom_point.Z())
 

@@ -28,24 +28,24 @@ license:
 
 from __future__ import annotations
 
-import trianglesolver
-
+from collections.abc import Iterable
 from math import cos, degrees, pi, radians, sin, tan
+from os import PathLike
 from typing import cast
 
-from collections.abc import Iterable
+import trianglesolver
 
 from build123d.build_common import LocationList, flatten_sequence, validate_inputs
 from build123d.build_enums import Align, FontStyle, Mode, TextAlign
 from build123d.build_sketch import BuildSketch
 from build123d.geometry import (
+    TOLERANCE,
     Axis,
     Location,
     Rotation,
     Vector,
     VectorLike,
     to_align_offset,
-    TOLERANCE,
 )
 from build123d.topology import (
     Compound,
@@ -55,8 +55,8 @@ from build123d.topology import (
     Sketch,
     Vertex,
     Wire,
-    tuplify,
     topo_explore_common_vertex,
+    tuplify,
 )
 
 
@@ -92,16 +92,20 @@ class BaseSketchObject(Sketch):
 
         context: BuildSketch | None = BuildSketch._get_context(self, log=False)
         if context is None:
-            new_faces = obj.moved(Rotation(0, 0, rotation)).faces()
+            new_faces = (
+                obj.moved(Rotation(0, 0, rotation)).faces()
+                if rotation != 0
+                else obj.faces()
+            )
 
         else:
             self.rotation = rotation
             self.mode = mode
 
-            obj = obj.moved(Rotation(0, 0, rotation))
+            obj = obj.moved(Rotation(0, 0, rotation)) if rotation != 0 else obj
 
             new_faces = ShapeList(
-                face.moved(location)
+                face.moved(location) if location != Location() else face
                 for face in obj.faces()
                 for location in LocationList._get_context().local_locations
             )
@@ -118,6 +122,7 @@ class Circle(BaseSketchObject):
 
     Args:
         radius (float): circle radius
+        arc_size (float, optional): angular size of sector. Defaults to 360.
         align (Align | tuple[Align, Align], optional): align MIN, CENTER, or MAX of object.
             Defaults to (Align.CENTER, Align.CENTER)
         mode (Mode, optional): combination mode. Defaults to Mode.ADD
@@ -128,6 +133,7 @@ class Circle(BaseSketchObject):
     def __init__(
         self,
         radius: float,
+        arc_size: float = 360.0,
         align: Align | tuple[Align, Align] | None = (Align.CENTER, Align.CENTER),
         mode: Mode = Mode.ADD,
     ):
@@ -135,9 +141,14 @@ class Circle(BaseSketchObject):
         validate_inputs(context, self)
 
         self.radius = radius
+        self.arc_size = arc_size
         self.align = tuplify(align, 2)
 
-        face = Face(Wire.make_circle(radius))
+        face = (
+            Face(Wire.make_circle(radius))
+            if arc_size == 360.0
+            else Face.revolve(Edge.make_line((radius, 0), (0, 0)), arc_size, Axis.Z)
+        )
         super().__init__(face, 0, self.align, mode)
 
 
@@ -437,14 +448,13 @@ class SlotCenterPoint(BaseSketchObject):
                 f"Got: distance = {half_line.length} (computed)"
             )
 
-        face = Face(
-            Wire.combine(
-                [
-                    Edge.make_line(point_v, center_v),
-                    Edge.make_line(center_v, center_v - half_line),
-                ]
-            )[0].offset_2d(height / 2)
+        slot_wires = Wire.combine(
+            [
+                Edge.make_line(point_v, center_v),
+                Edge.make_line(center_v, center_v - half_line),
+            ]
         )
+        face = Face(slot_wires[0].offset_2d(height / 2))  # pylint: disable=no-member
         super().__init__(face, rotation, None, mode)
 
 
@@ -555,7 +565,7 @@ class Text(BaseSketchObject):
     "Arial Black". Alternatively, a specific font file can be specified with font_path.
 
     Use `available_fonts()` to list available font names for `font` and FontStyles.
-    Note: on Windows, fonts must be installed with "Install for all users" to be found 
+    Note: on Windows, fonts must be installed with "Install for all users" to be found
     by name.
 
     Not all fonts have every FontStyle available, however ITALIC and BOLDITALIC will
@@ -571,7 +581,7 @@ class Text(BaseSketchObject):
         txt (str): text to render
         font_size (float): size of the font in model units
         font (str, optional): font name. Defaults to "Arial"
-        font_path (str, optional): system path to font file. Defaults to None
+        font_path (PathLike | str, optional): system path to font file. Defaults to None
         font_style (Font_Style, optional): font style, REGULAR, BOLD, BOLDITALIC, or
             ITALIC. Defaults to Font_Style.REGULAR
         text_align (tuple[TextAlign, TextAlign], optional): horizontal text align
@@ -582,6 +592,8 @@ class Text(BaseSketchObject):
         path (Edge | Wire, optional): path for text to follow. Defaults to None
         position_on_path (float, optional): the relative location on path to position
             the text, values must be between 0.0 and 1.0. Defaults to 0.0
+        single_line_width (float, optional): width of outlined single line font.
+            Defaults to 4% of font_size
         rotation (float, optional): angle to rotate object. Defaults to 0
         mode (Mode, optional): combination mode. Defaults to Mode.ADD
     """
@@ -589,22 +601,36 @@ class Text(BaseSketchObject):
     # pylint: disable=too-many-instance-attributes
     _applies_to = [BuildSketch._tag]
 
+    # Text is exceptionally flexible as per user requests
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+
     def __init__(
         self,
         txt: str,
         font_size: float,
         font: str = "Arial",
-        font_path: str | None = None,
+        font_path: PathLike[str] | str | None = None,
         font_style: FontStyle = FontStyle.REGULAR,
         text_align: tuple[TextAlign, TextAlign] = (TextAlign.CENTER, TextAlign.CENTER),
         align: Align | tuple[Align, Align] | None = None,
         path: Edge | Wire | None = None,
         position_on_path: float = 0.0,
+        single_line_width: float | None = None,
         rotation: float = 0.0,
         mode: Mode = Mode.ADD,
     ):
         context: BuildSketch | None = BuildSketch._get_context(self)
         validate_inputs(context, self)
+
+        if single_line_width is None:
+            # Ensure line width is passed for single line fonts to convert to faces
+            # Default is 4% of font_size
+            single_line_width = 0.04 * font_size
+        elif single_line_width <= 0.0:
+            raise ValueError(
+                f"single_line_width ({single_line_width}) must be greater than 0"
+            )
 
         self.txt = txt
         self.font_size = font_size
@@ -615,6 +641,7 @@ class Text(BaseSketchObject):
         self.align = align
         self.text_path = path
         self.position_on_path = position_on_path
+        self.single_line_width = single_line_width
         self.rotation = rotation
         self.mode = mode
 
@@ -628,6 +655,7 @@ class Text(BaseSketchObject):
             align=align,
             position_on_path=position_on_path,
             text_path=path,
+            single_line_width=single_line_width,
         )
         super().__init__(text_string, rotation, None, mode)
 
@@ -738,6 +766,9 @@ class Triangle(BaseSketchObject):
     """
 
     _applies_to = [BuildSketch._tag]
+
+    # Using standard mathematical terms for the interior angles
+    # pylint: disable=invalid-name
 
     def __init__(
         self,
