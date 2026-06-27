@@ -137,7 +137,7 @@ def _extrude_topods_shape(obj: TopoDS_Shape, direction: VectorLike) -> TopoDS_Sh
         extrusion = _make_topods_compound_from_shapes(solids)
     return extrusion
 
-def _makeNamedExtrusion(obj: Shape, direction: VectorLike, newTag: int):
+def _makeNamedExtrusion(obj: Shape, direction: VectorLike, newTag: str):
     """extrude
 
     Extrude a Mapped Shape in the provided direction.
@@ -163,44 +163,37 @@ def _makeNamedExtrusion(obj: Shape, direction: VectorLike, newTag: int):
 
     if obj is None or not isinstance(
         obj,
-        (Shape),
+        Shape
     ):
         raise ValueError(f"extrude not supported for {type(obj)}")
 
-    prism_builder = BRepPrimAPI_MakePrism(obj, direction.wrapped)
+    prism_builder = BRepPrimAPI_MakePrism(obj.wrapped, direction.wrapped)
     returnShape._wrapped = downcast(prism_builder.Shape())
 
-    generatedShapes = NamingData.ShapeHistoryList(0)
-    modifiedShapes = NamingData.ShapeHistoryList(1)
+    generatedShapes = NamingMethods.ShapeHistoryList(0)
+    modifiedShapes = NamingMethods.ShapeHistoryList(1)
 
-    for indexedNameStr, subElement in returnShape.edges():
-        indexedName = IndexedName.fromString(indexedNameStr)
+    for subElement in obj.elements():
+        indexedName = obj.get_indexed_name_of_child(subElement)
         indexedName.parentIdentifier = returnShape.tag
 
         generatedShapes.extendList(indexedName,
-                                   maker.Generated(subElement),
-                                   extrusionTShape)
+                                   prism_builder.Generated(subElement.wrapped),
+                                   returnShape)
 
-    for indexedNameStr, subElement in supportTShape.getShapeMap().items():
-        indexedName = IndexedName.fromString(indexedNameStr)
-        indexedName.parentIdentifier = supportTShape.tag
+    for subElement in obj.elements():
+        indexedName = obj.get_indexed_name_of_child(subElement)
+        indexedName.parentIdentifier = returnShape.tag
 
         modifiedShapes.extendList(indexedName,
-                                  maker.Modified(subElement),
-                                  extrusionTShape)
+                                  prism_builder.Modified(subElement.wrapped),
+                                  returnShape)
 
     modifiedShapes.updateReverseList()
     generatedShapes.updateReverseList()
 
-    NamingMethods.mapShapeHistory(returnShape)
-    # shape_type = returnShape._wrapped.ShapeType()
-    # if shape_type == TopAbs_ShapeEnum.TopAbs_COMPSOLID:
-    #     solids = []
-    #     explorer = TopExp_Explorer(returnShape._wrapped, TopAbs_ShapeEnum.TopAbs_SOLID)
-    #     while explorer.More():
-    #         solids.append(downcast(explorer.Current()))
-    #         explorer.Next()
-    #     returnShape._wrapped = _make_topods_compound_from_shapes(solids)
+    NamingMethods.mapShapeHistory(returnShape, [obj], generatedShapes, modifiedShapes)
+
     return returnShape
 
 def _make_loft(

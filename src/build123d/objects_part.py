@@ -42,6 +42,7 @@ from build123d.geometry import (
     RotationLike,
     Vector,
     VectorLike,
+    Axis
 )
 from build123d.topology import (
     Compound,
@@ -324,6 +325,7 @@ class CounterSinkHole(BasePartObject):
         depth (float, optional): hole depth, through part if None. Defaults to None
         counter_sink_angle (float, optional): cone angle. Defaults to 82
         mode (Mode, optional): combination mode. Defaults to Mode.SUBTRACT
+        invert (bool, optional): invert countersink on Z. Defaults to False
     """
 
     _applies_to = [BuildPart._tag]
@@ -335,6 +337,7 @@ class CounterSinkHole(BasePartObject):
         depth: float | None = None,
         counter_sink_angle: float = 82,  # Common tip angle
         mode: Mode = Mode.SUBTRACT,
+        invert: bool = False
     ):
         context: BuildPart | None = BuildPart._get_context(self)
         validate_inputs(context, self)
@@ -366,6 +369,9 @@ class CounterSinkHole(BasePartObject):
             solid = Part(fused)
         else:
             solid = fused
+
+        if isinstance(invert, bool) and invert:
+            solid = solid.rotate(Axis.X, 180)
 
         super().__init__(part=solid, rotation=(0, 0, 0), mode=mode)
 

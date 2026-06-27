@@ -1,11 +1,11 @@
-from typing import List, Union
+from typing import List, Union, Any
 import build123d.topology.naming.naming_data as NamingData
 
 # Layout for MappedName's sections:
 # IterationTag and OpCode do not determine an element's identification, it determines what the match method should look for.
 # Those initial two entries tell the design intent algorithm what to look for in a loop name. They're used as a
 # `key` of sorts.
-# ReferenceIDs;ReferenceNames;IterationTag;OperationCode;Index;ElementType;DuplicateCount;MapperInfo
+# ReferenceIDs;ReferenceNames;IterationTag;OperationCode;Index;ElementType;DuplicateCount;MapperFlags;ConnectedNames
 #      ^     other mapped names    ^           SKT         0      E/V/F           0        anything
 # g1:1233:0,g2:1233:1,g3:1233:0   1234
 
@@ -29,27 +29,48 @@ class MappedName:
     def equal(self, otherMappedName) -> bool:
         return str(self) == str(otherMappedName)
 
-    def makeSection(referenceIDs: List[str] = ["_"],
-                    referenceNames: List[str] = ["_"],
+    def makeSection(referenceIDs: List[str] = [],
+                    referenceNames: List[Any] = [],
                     iterationTag: int = 0,
                     operationCode: str = "MKR",
                     index: int = 0,
                     elementType: str = "E",
                     duplicateCount: int = 0,
-                    mapperInfo: str = "_"
+                    mapperFlags: List[str] = []
     ) -> str:
         formattedRefNames = ""
+        formattedMapperFlags = ""
 
-        for i, name in enumerate(referenceNames):
-            if i != 0:
-                formattedRefNames += ","
+        if len(referenceNames) > 0:
+            for i, name in enumerate(referenceNames):
+                nameString = None
 
-            formattedRefNames += MappedName.escapeDeliminators(name, [";", ":", ","])
+                if i != 0:
+                    formattedRefNames += ","
 
-        return f"{','.join(referenceIDs)};{formattedRefNames};{str(iterationTag)};{operationCode};{str(index)};{elementType};{str(duplicateCount)};{mapperInfo}"
+                if isinstance(name, str):
+                    nameString = name
+                elif isinstance(name, MappedName):
+                    nameString = name.toString()
+
+                if nameString != None:
+                    formattedRefNames += MappedName.escapeStandardDeliminators(nameString)
+        else:
+            formattedRefNames = "_"
+
+        if len(mapperFlags) > 0:
+            for i, flag in enumerate(mapperFlags):
+                if i != 0:
+                    formattedMapperFlags += ","
+                
+                formattedMapperFlags += MappedName.escapeStandardDeliminators(flag)
+        else:
+            formattedMapperFlags = "_"
+
+        return f"{','.join(referenceIDs)};{formattedRefNames};{str(iterationTag)};{operationCode};{str(index)};{elementType};{str(duplicateCount)};{formattedMapperFlags}"
     
     @staticmethod
-    def escapeDeliminators(string: str, delims = [";"]) -> str:
+    def escapeDeliminators(string: str, delims = []) -> str:
         newStr = ""
 
         for char in string:
@@ -59,13 +80,16 @@ class MappedName:
             newStr += char
         
         return newStr
+    
+    @staticmethod
+    def escapeStandardDeliminators(string: str) -> str:
+        return MappedName.escapeDeliminators(string, NamingData.ESCAPED_DELIMINATORS)
 
     @staticmethod
-    def stringToSections(str, deliminator = "|") -> List[str]:
+    def stringToSections(str, deliminators: List[str] = []) -> List[str]:
         sections = []
         sectionString = ""
         escapeNumber = 0
-        # escapedChar = ""
 
         for i, char in enumerate(str):
             lastChar = (i == (len(str) - 1))
@@ -75,20 +99,23 @@ class MappedName:
 
                 if escapeNumber == 1:
                     continue
-            elif (char == deliminator and escapeNumber == 0) or lastChar:
-                if lastChar and char != deliminator:
+            elif (char in deliminators and escapeNumber == 0) or lastChar:
+                if lastChar and char not in deliminators:
                     sectionString += char
 
                 sections.append(sectionString)
                 sectionString = ""
                 continue
             elif escapeNumber > 0:
-                # escapedChar = char
                 escapeNumber = 0
             
             sectionString += char
         
         return sections
+    
+    @staticmethod
+    def stringToSectionsWithStandardDeliminators(str) -> List[str]:
+        return MappedName.stringToSections(str, NamingData.ESCAPED_DELIMINATORS)
     
     def toSections(self) -> List[str]:
         selfHash = hash(self)

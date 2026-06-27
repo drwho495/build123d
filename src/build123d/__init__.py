@@ -217,6 +217,7 @@ __all__ = [
     "make_face",
     "make_hull",
     "mirror",
+    "clean",
     "offset",
     "project",
     # "project_points",

@@ -130,6 +130,7 @@ from OCP.TopoDS import (
 from OCP.TopTools import (
     TopTools_IndexedDataMapOfShapeListOfShape,
     TopTools_ListOfShape,
+    TopTools_IndexedMapOfShape,
     TopTools_SequenceOfShape,
 )
 from typing_extensions import Self
@@ -151,6 +152,7 @@ from build123d.geometry import (
     logger,
 )
 from build123d.topology.naming.element_map import ElementMap
+from build123d.topology.naming.indexed_name import IndexedName
 
 if TYPE_CHECKING:  # pragma: no cover
     from build123d.build_part import BuildPart  # pylint: disable=R0801
@@ -888,8 +890,8 @@ class Shape(NodeMixin, Generic[TOPODS]):
         else:
             sum_shape = self.fuse(*summands)
 
-        if SkipClean.clean and not isinstance(sum_shape, list):
-            sum_shape = sum_shape.clean()
+        # if SkipClean.clean and not isinstance(sum_shape, list):
+            # sum_shape = sum_shape.clean()
 
         return sum_shape
 
@@ -1045,7 +1047,7 @@ class Shape(NodeMixin, Generic[TOPODS]):
     # @abstractmethod
     # def center(self, center_of: CenterOf) -> Vector:
     #     """Compute the center with a specific type of calculation."""
-
+    # TODO: map
     def clean(self) -> Self:
         """clean
 
@@ -1065,6 +1067,34 @@ class Shape(NodeMixin, Generic[TOPODS]):
         except Exception:
             warnings.warn(f"Unable to clean {self}", stacklevel=2)
         return self
+    
+    def elements(self, types = ["Face", "Edge", "Vertex"]) -> ShapeList:
+        """elements - all the elements of specified types in this Shape - subclasses may override"""
+        elementList = ShapeList()
+        allTypes = Shape.shape_LUT.values()
+
+        for shapeType in types:
+            if shapeType in allTypes:
+                elementList.extend(Shape.get_shape_list(self, shapeType))
+        
+        return elementList
+    
+    def get_indexed_name_of_child(self, childShape: Union[Shape, TopoDS_Shape]) -> IndexedName:
+        internalShapeMap = TopTools_IndexedMapOfShape()
+        elementType = ""
+
+        if isinstance(childShape, Shape):
+            wrappedShape = childShape.wrapped
+            elementType = childShape.shape_type
+        elif isinstance(childShape, TopoDS_Shape):
+            wrappedShape = childShape
+            elementType = tcast(Shapes, Shape.shape_LUT[shapetype(childShape)])
+
+        TopExp.MapShapes_s(wrappedShape, wrappedShape.ShapeType(), internalShapeMap)
+
+        for i in range(1, internalShapeMap.Size() + 1):
+            if internalShapeMap.FindKey(i).IsSame(wrappedShape):
+                return IndexedName.fromString(f"{elementType}{i}")
 
     def closest_points(self, other: Shape | VectorLike) -> tuple[Vector, Vector]:
         """Points on two shapes where the distance between them is minimal"""

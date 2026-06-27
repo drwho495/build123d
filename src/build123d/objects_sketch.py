@@ -81,10 +81,14 @@ class BaseSketchObject(Sketch):
         rotation: float = 0,
         align: Align | tuple[Align, Align] | None = None,
         mode: Mode = Mode.ADD,
+        tag: str = ""
     ):
         if align is not None:
             align = tuplify(align, 2)
             obj.move(Location(obj.bounding_box().to_align_offset(align)))
+
+        """ This is the tag used by the naming algorithm to describe sketch elements in history information """
+        self.tag = tag
 
         context: BuildSketch | None = BuildSketch._get_context(self, log=False)
         if context is None:
@@ -234,6 +238,7 @@ class Rectangle(BaseSketchObject):
         rotation: float = 0,
         align: Align | tuple[Align, Align] | None = (Align.CENTER, Align.CENTER),
         mode: Mode = Mode.ADD,
+        tag: str = ""
     ):
         context: BuildSketch | None = BuildSketch._get_context(self)
         validate_inputs(context, self)
@@ -243,7 +248,7 @@ class Rectangle(BaseSketchObject):
         self.align = tuplify(align, 2)
 
         face = Face.make_rect(width, height)
-        super().__init__(face, rotation, self.align, mode)
+        super().__init__(face, rotation, self.align, mode, tag)
 
 
 class RectangleRounded(BaseSketchObject):

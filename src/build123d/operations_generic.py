@@ -546,6 +546,17 @@ def mirror(
     return mirrored_compound
 
 
+def clean() -> Shape:
+    """Generic Operation: clean
+
+    Cleans the shape of this builder.
+    """
+    
+    context: Builder | None = Builder._get_context("clean")
+    context._obj = context._obj.clean()
+
+    return context._obj
+
 OffsetType: TypeAlias = Edge | Face | Solid | Compound
 """Type of objects which can be offset"""
 
